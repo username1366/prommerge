@@ -1,4 +1,4 @@
-module prommerge
+module github.com/username1366/prommerge
 
 go 1.22.1
 
