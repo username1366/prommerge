@@ -4,29 +4,28 @@ import (
 	"fmt"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"net/http"
+	"strings"
 	"testing"
 	"time"
 )
 
 // TestAdd tests the Add function.
-func TestAdd(t *testing.T) {
+func TestMerge(t *testing.T) {
 
 	go http.ListenAndServe(":11112", promhttp.Handler())
 	go http.ListenAndServe(":11113", promhttp.Handler())
-	time.Sleep(time.Millisecond * 10)
+	time.Sleep(time.Millisecond * 40)
 
 	pd := NewPromData([]string{
 		"http://localhost:11112/metrics",
 		"http://localhost:11113/metrics",
 	})
 	pd.CollectTargets()
-	//pd.ToString()
-	fmt.Printf("%v\n", pd.ToString())
+	result := pd.ToString()
+	fmt.Printf("%v\n", result)
 
-	result := 3
-	expected := 3
-
-	if result != expected {
-		t.Errorf("Add(1, 2) = %d; want %d", result, expected)
+	expected := "promhttp_metric_handler_requests_total"
+	if !strings.Contains(pd.ToString(), expected) {
+		t.Errorf("Receive %v; want %v", result, expected)
 	}
 }

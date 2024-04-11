@@ -2,6 +2,7 @@ package prommerge
 
 import (
 	"fmt"
+	"sort"
 
 	log "github.com/sirupsen/logrus"
 	"io"
@@ -13,11 +14,15 @@ import (
 const (
 	MetricReStr = `^([\w]+)(?:{(.+?)})? ([0-9.e+-]+)`
 	LabelReStr  = `^([\w]+)="(.+)"`
+	TypeReStr   = `^#\sTYPE\s(\w+)\s.+`
+	HelpReStr   = `^#\sHELP\s(\w+)\s.+`
 )
 
 var (
 	metricRe = regexp.MustCompile(MetricReStr)
 	labelRe  = regexp.MustCompile(LabelReStr)
+	typeRe   = regexp.MustCompile(TypeReStr)
+	helpRe   = regexp.MustCompile(HelpReStr)
 )
 
 func NewPromData(targets []string) *PromData {
@@ -34,30 +39,34 @@ type PromData struct {
 
 func (pd *PromData) CollectTargets() {
 	pd.PromMetrics = combineMetrics(pd.Targets...)
-	log.Printf("Merged %v metrics", len(pd.PromMetrics))
+	log.Debugf("Merged %v metrics", len(pd.PromMetrics))
 }
 
 func (pd *PromData) ToString() string {
 	var output string
+	var prevMetric string
 	for _, m := range pd.PromMetrics {
 		mStr := fmt.Sprintf("%v%v %v", m.Name, func() string {
-			if len(m.Labels) == 0 {
+			if len(m.LabelList) == 0 {
 				return ""
 			}
 			var labelPairs string
 			labelPairs = "{"
-			i := 0
-			for k, v := range m.Labels {
-				labelPairs = labelPairs + fmt.Sprintf("%v=\"%v\"", k, v)
-				if i != len(m.Labels)-1 {
+			for i := 0; i < len(m.LabelList); i += 2 {
+				labelPairs = labelPairs + fmt.Sprintf("%v=\"%v\"", m.LabelList[i], m.LabelList[i+1])
+				if i != len(m.LabelList)-2 {
 					labelPairs = labelPairs + ","
 				}
-				i++
 			}
 			labelPairs = labelPairs + "}"
 			return labelPairs
 		}(), m.Value)
+		if prevMetric != m.Name && (m.Help != "" || m.Type != "") {
+			output = output + fmt.Sprintf("%v\n", m.Help)
+			output = output + fmt.Sprintf("%v\n", m.Type)
+		}
 		output = output + fmt.Sprintf("%v\n", mStr)
+		prevMetric = m.Name
 	}
 	return output
 }
@@ -112,5 +121,12 @@ func combineMetrics(urls ...string) []*PromMetric {
 	for result := range ch {
 		metrics = append(metrics, Load(result.Data, result.Source)...)
 	}
+	sortPromMetricsByName(metrics)
 	return metrics
+}
+
+func sortPromMetricsByName(metrics []*PromMetric) {
+	sort.Slice(metrics, func(i, j int) bool {
+		return metrics[i].Name < metrics[j].Name
+	})
 }

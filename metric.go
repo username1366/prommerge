@@ -10,20 +10,36 @@ import (
 )
 
 type PromMetric struct {
-	Name   string
-	Labels map[string]string
-	Value  float64
-	Help   string
-	Type   string
+	Name      string
+	LabelList []string
+	Value     float64
+	Help      string
+	Type      string
 }
 
 func Load(in string, source string) []*PromMetric {
 	var metrics []*PromMetric
+	helpMap := make(map[string]string)
+	typeMap := make(map[string]string)
+
 	lines := ReadStringLineByLine(in)
 	for i, _ := range lines {
-		if lines[i][0] == '#' {
-			// Metadata
-			log.Debugf("Metadata string %v", lines[i])
+		if lines[i][0] == '#' && len(lines[i]) > 6 && lines[i][0:6] == "# HELP" {
+			log.Debugf("Metadata help %v", lines[i])
+			matches := helpRe.FindStringSubmatch(lines[i])
+			if matches == nil || len(matches) < 2 {
+				log.Warnf("No matches found for the input %v", lines[i])
+			}
+			helpMap[matches[1]] = matches[0]
+			continue
+		}
+		if lines[i][0] == '#' && len(lines[i]) > 6 && lines[i][0:6] == "# TYPE" {
+			log.Debugf("Metadata type %v", lines[i])
+			matches := typeRe.FindStringSubmatch(lines[i])
+			if matches == nil || len(matches) < 2 {
+				log.Warnf("No matches found for the input %v", lines[i])
+			}
+			typeMap[matches[1]] = matches[0]
 			continue
 		}
 
@@ -31,6 +47,8 @@ func Load(in string, source string) []*PromMetric {
 		if err != nil {
 			log.Errorf("%v", err)
 		}
+		p.Help = helpMap[p.Name]
+		p.Type = typeMap[p.Name]
 		metrics = append(metrics, p)
 		log.Debugf("Metric: %+v", p)
 	}
@@ -48,8 +66,9 @@ func MetricParser(input, source string) (*PromMetric, error) {
 	p.Name = matches[1]
 	log.Debugf("Labels: %v", matches[2])
 	labelPairs := strings.Split(matches[2], ",")
-	p.Labels = make(map[string]string, len(labelPairs)+1)
-	p.Labels["target_addr"] = source
+	p.LabelList = append(p.LabelList, "target_addr", source)
+
+	// Parse labels
 	for _, lPair := range labelPairs {
 		m := labelRe.FindStringSubmatch(lPair)
 		if m == nil {
@@ -57,7 +76,7 @@ func MetricParser(input, source string) (*PromMetric, error) {
 			continue
 		}
 		if len(m) > 2 {
-			p.Labels[m[1]] = m[2]
+			p.LabelList = append(p.LabelList, m[1], m[2])
 		}
 	}
 	value, err := strconv.ParseFloat(matches[3], 64)
