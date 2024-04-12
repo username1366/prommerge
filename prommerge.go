@@ -3,6 +3,7 @@ package prommerge
 import (
 	"fmt"
 	"sort"
+	"time"
 
 	log "github.com/sirupsen/logrus"
 	"io"
@@ -43,7 +44,7 @@ type PromTarget struct {
 }
 
 // CollectTargets fetches metrics from multiple URLs concurrently and combines them
-func (pd *PromData) CollectTargets() {
+func (pd *PromData) CollectTargets() error {
 	var metrics []*PromMetric
 	var wg sync.WaitGroup
 	ch := make(chan *PromChanData, len(pd.PromTargets))
@@ -58,14 +59,14 @@ func (pd *PromData) CollectTargets() {
 
 	for result := range ch {
 		if result == nil {
-			log.Warnf("Empty prometheus target result")
-			continue
+			return fmt.Errorf("empty prometheus target result")
 		}
 		metrics = append(metrics, ParseMetricData(result.Data, result.Source, result.ExtraLabels)...)
 	}
 	pd.PromMetrics = metrics
 	pd.sortPromMetrics()
-	//return metrics
+
+	return nil
 }
 
 func (pd *PromData) sortPromMetrics() {
@@ -75,10 +76,20 @@ func (pd *PromData) sortPromMetrics() {
 	})
 }
 
+// httpClient is a shared http.Client with a custom Transport
+var httpClient = &http.Client{
+	Timeout: time.Second * 30, // Set a total timeout for the request
+	Transport: &http.Transport{
+		MaxIdleConns:    10,
+		IdleConnTimeout: 30 * time.Second,
+		//DisableCompression:  true,
+	},
+}
+
 // FetchData makes an HTTP GET request to the specified URL and sends the response body to a channel
 func (pt *PromTarget) FetchData(wg *sync.WaitGroup, ch chan<- *PromChanData) {
 	defer wg.Done() // Signal that this goroutine is done after completing its task
-	response, err := http.Get(pt.Url)
+	response, err := httpClient.Get(pt.Url)
 	if err != nil {
 		log.Errorf("Error fetching data from %s: %v\n", pt.Url, err)
 		ch <- nil // Send an empty string in case of error

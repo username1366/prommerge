@@ -1,7 +1,9 @@
 package prommerge
 
 import (
+	"fmt"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
+	log "github.com/sirupsen/logrus"
 	"net/http"
 	"strings"
 	"testing"
@@ -29,7 +31,10 @@ func BenchmarkFunction(b *testing.B) {
 				},
 			},
 		})
-		pd.CollectTargets()
+		err := pd.CollectTargets()
+		if err != nil {
+			log.Fatal(err)
+		}
 		_ = pd.ToString()
 	}
 }
@@ -47,6 +52,7 @@ func TestMerge(t *testing.T) {
 			ExtraLabels: []string{
 				`app="api"`,
 				`source="internet"`,
+				`service="backend"`,
 			},
 		},
 		{
@@ -56,12 +62,15 @@ func TestMerge(t *testing.T) {
 			},
 		},
 	})
-	pd.CollectTargets()
+	err := pd.CollectTargets()
+	if err != nil {
+		log.Fatal(err)
+	}
 	result := pd.ToString()
-	//fmt.Printf("%v\n", result)
+	fmt.Printf("%v\n", result)
 
 	expectedList := []string{
-		`go_threads{app="api",source="internet"}`,
+		`go_threads{app="api",source="internet",service="backend"}`,
 		`go_threads{app="web"}`,
 	}
 
