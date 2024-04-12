@@ -1,7 +1,6 @@
 package prommerge
 
 import (
-	"fmt"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"net/http"
 	"strings"
@@ -40,7 +39,7 @@ func TestMerge(t *testing.T) {
 	//log.SetLevel(log.DebugLevel)
 	go http.ListenAndServe(":11112", promhttp.Handler())
 	go http.ListenAndServe(":11113", promhttp.Handler())
-	time.Sleep(time.Millisecond * 20)
+	time.Sleep(time.Millisecond * 1)
 
 	pd := NewPromData([]PromTarget{
 		{
@@ -59,10 +58,17 @@ func TestMerge(t *testing.T) {
 	})
 	pd.CollectTargets()
 	result := pd.ToString()
-	fmt.Printf("%v\n", result)
+	//fmt.Printf("%v\n", result)
 
-	expected := "promhttp_metric_handler_requests_total"
-	if !strings.Contains(pd.ToString(), expected) {
-		t.Errorf("Receive %v; want %v", result, expected)
+	expectedList := []string{
+		`go_threads{app="api",source="internet"}`,
+		`go_threads{app="web"}`,
+	}
+
+	if !strings.Contains(pd.ToString(), expectedList[0]) {
+		t.Errorf("Receive %v; want %v", result, expectedList[0])
+	}
+	if !strings.Contains(pd.ToString(), expectedList[1]) {
+		t.Errorf("Receive %v; want %v", result, expectedList[1])
 	}
 }
