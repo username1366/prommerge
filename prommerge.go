@@ -25,21 +25,89 @@ var (
 	helpRe   = regexp.MustCompile(HelpReStr)
 )
 
-func NewPromData(targets []string) *PromData {
+func NewPromData(promTargets []PromTarget) *PromData {
 	pd := &PromData{
-		Targets: targets,
+		PromTargets: promTargets,
 	}
 	return pd
 }
 
 type PromData struct {
 	PromMetrics []*PromMetric
-	Targets     []string
+	PromTargets []PromTarget
 }
 
+type PromTarget struct {
+	Url         string
+	ExtraLabels []string
+}
+
+// CollectTargets fetches metrics from multiple URLs concurrently and combines them
 func (pd *PromData) CollectTargets() {
-	pd.PromMetrics = combineMetrics(pd.Targets...)
-	log.Debugf("Merged %v metrics", len(pd.PromMetrics))
+	var metrics []*PromMetric
+	var wg sync.WaitGroup
+	ch := make(chan *PromChanData, len(pd.PromTargets))
+
+	for i, _ := range pd.PromTargets {
+		wg.Add(1)
+		go pd.PromTargets[i].FetchData(&wg, ch) // Start a goroutine for each URL
+	}
+
+	wg.Wait() // Wait for all fetch operations to complete
+	close(ch) // Close the channel after all goroutines report they are done
+
+	for result := range ch {
+		if result == nil {
+			log.Warnf("Empty prometheus target result")
+			continue
+		}
+		metrics = append(metrics, ParseMetricData(result.Data, result.Source, result.ExtraLabels)...)
+	}
+	pd.PromMetrics = metrics
+	pd.sortPromMetrics()
+	//return metrics
+}
+
+func (pd *PromData) sortPromMetrics() {
+	sort.Slice(pd.PromMetrics, func(i, j int) bool {
+		return pd.PromMetrics[i].sort < pd.PromMetrics[j].sort
+		//return pd.PromMetrics[i].Name < pd.PromMetrics[j].Name
+	})
+}
+
+// FetchData makes an HTTP GET request to the specified URL and sends the response body to a channel
+func (pt *PromTarget) FetchData(wg *sync.WaitGroup, ch chan<- *PromChanData) {
+	defer wg.Done() // Signal that this goroutine is done after completing its task
+	response, err := http.Get(pt.Url)
+	if err != nil {
+		log.Errorf("Error fetching data from %s: %v\n", pt.Url, err)
+		ch <- nil // Send an empty string in case of error
+		return
+	}
+	defer func() {
+		err = response.Body.Close()
+		if err != nil {
+			log.Errorf("Failed to close response body %v", err)
+		}
+	}()
+
+	body, err := io.ReadAll(response.Body)
+	if err != nil {
+		log.Errorf("Error reading data from %s: %v\n", pt.Url, err)
+		ch <- nil // Send an empty string in case of error
+		return
+	}
+	ch <- &PromChanData{
+		Data:        string(body),
+		Source:      pt.Url,
+		ExtraLabels: pt.ExtraLabels,
+	}
+}
+
+type PromChanData struct {
+	Data        string
+	Source      string
+	ExtraLabels []string
 }
 
 func (pd *PromData) ToString() string {
@@ -69,64 +137,4 @@ func (pd *PromData) ToString() string {
 		prevMetric = m.Name
 	}
 	return output
-}
-
-// fetchData makes an HTTP GET request to the specified URL and sends the response body to a channel
-func fetchData(url string, wg *sync.WaitGroup, ch chan<- *PromChanData) {
-	defer wg.Done() // Signal that this goroutine is done after completing its task
-	response, err := http.Get(url)
-	if err != nil {
-		fmt.Printf("Error fetching data from %s: %v\n", url, err)
-		ch <- nil // Send an empty string in case of error
-		return
-	}
-	defer func() {
-		err = response.Body.Close()
-		if err != nil {
-			log.Errorf("Failed to close response body %v", err)
-		}
-	}()
-
-	body, err := io.ReadAll(response.Body)
-	if err != nil {
-		fmt.Printf("Error reading data from %s: %v\n", url, err)
-		ch <- nil // Send an empty string in case of error
-		return
-	}
-	ch <- &PromChanData{
-		Data:   string(body),
-		Source: url,
-	}
-}
-
-type PromChanData struct {
-	Data   string
-	Source string
-}
-
-// combineMetrics fetches metrics from multiple URLs concurrently and combines them
-func combineMetrics(urls ...string) []*PromMetric {
-	var metrics []*PromMetric
-	var wg sync.WaitGroup
-	ch := make(chan *PromChanData, len(urls))
-
-	for _, url := range urls {
-		wg.Add(1)
-		go fetchData(url, &wg, ch) // Start a goroutine for each URL
-	}
-
-	wg.Wait() // Wait for all fetch operations to complete
-	close(ch) // Close the channel after all goroutines report they are done
-
-	for result := range ch {
-		metrics = append(metrics, Load(result.Data, result.Source)...)
-	}
-	sortPromMetricsByName(metrics)
-	return metrics
-}
-
-func sortPromMetricsByName(metrics []*PromMetric) {
-	sort.Slice(metrics, func(i, j int) bool {
-		return metrics[i].Name < metrics[j].Name
-	})
 }

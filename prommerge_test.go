@@ -9,16 +9,53 @@ import (
 	"time"
 )
 
-// TestAdd tests the Add function.
-func TestMerge(t *testing.T) {
-
+func BenchmarkFunction(b *testing.B) {
 	go http.ListenAndServe(":11112", promhttp.Handler())
 	go http.ListenAndServe(":11113", promhttp.Handler())
-	time.Sleep(time.Millisecond * 40)
+	time.Sleep(time.Millisecond * 20)
+	for i := 0; i < b.N; i++ {
+		// call the function you want to test
+		pd := NewPromData([]PromTarget{
+			{
+				Url: "http://127.1:11112/metrics",
+				ExtraLabels: []string{
+					`app="api"`,
+					`source="internet"`,
+				},
+			},
+			{
+				Url: "http://127.1:11113/metrics",
+				ExtraLabels: []string{
+					`app="web"`,
+				},
+			},
+		})
+		pd.CollectTargets()
+		_ = pd.ToString()
+	}
+}
 
-	pd := NewPromData([]string{
-		"http://localhost:11112/metrics",
-		"http://localhost:11113/metrics",
+// TestAdd tests the Add function.
+func TestMerge(t *testing.T) {
+	//log.SetLevel(log.DebugLevel)
+	go http.ListenAndServe(":11112", promhttp.Handler())
+	go http.ListenAndServe(":11113", promhttp.Handler())
+	time.Sleep(time.Millisecond * 20)
+
+	pd := NewPromData([]PromTarget{
+		{
+			Url: "http://127.1:11112/metrics",
+			ExtraLabels: []string{
+				`app="api"`,
+				`source="internet"`,
+			},
+		},
+		{
+			Url: "http://127.1:11113/metrics",
+			ExtraLabels: []string{
+				`app="web"`,
+			},
+		},
 	})
 	pd.CollectTargets()
 	result := pd.ToString()

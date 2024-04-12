@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"fmt"
 	log "github.com/sirupsen/logrus"
+
 	"os"
 	"strconv"
 	"strings"
@@ -15,9 +16,10 @@ type PromMetric struct {
 	Value     float64
 	Help      string
 	Type      string
+	sort      string
 }
 
-func Load(in string, source string) []*PromMetric {
+func ParseMetricData(in string, source string, extraLabels []string) []*PromMetric {
 	var metrics []*PromMetric
 	helpMap := make(map[string]string)
 	typeMap := make(map[string]string)
@@ -43,7 +45,7 @@ func Load(in string, source string) []*PromMetric {
 			continue
 		}
 
-		p, err := MetricParser(lines[i], source)
+		p, err := MetricParser(lines[i], extraLabels)
 		if err != nil {
 			log.Errorf("%v", err)
 		}
@@ -55,7 +57,7 @@ func Load(in string, source string) []*PromMetric {
 	return metrics
 }
 
-func MetricParser(input, source string) (*PromMetric, error) {
+func MetricParser(input string, extraLabels []string) (*PromMetric, error) {
 	p := new(PromMetric)
 	matches := metricRe.FindStringSubmatch(input)
 	if matches == nil {
@@ -66,7 +68,12 @@ func MetricParser(input, source string) (*PromMetric, error) {
 	p.Name = matches[1]
 	log.Debugf("Labels: %v", matches[2])
 	labelPairs := strings.Split(matches[2], ",")
-	p.LabelList = append(p.LabelList, "target_addr", source)
+	for _, labelPair := range extraLabels {
+		kv := strings.Split(labelPair, "=")
+		if len(kv) == 2 {
+			p.LabelList = append(p.LabelList, kv[0], strings.ReplaceAll(kv[1], `"`, ""))
+		}
+	}
 
 	// Parse labels
 	for _, lPair := range labelPairs {
@@ -85,6 +92,7 @@ func MetricParser(input, source string) (*PromMetric, error) {
 	}
 	log.Debugf("Value: %v", value)
 	p.Value = value
+	p.sort = fmt.Sprintf("%v%v", p.Name, p.LabelList)
 	return p, nil
 }
 
