@@ -61,7 +61,7 @@ func (pd *PromData) CollectTargets() error {
 		if result == nil {
 			return fmt.Errorf("empty prometheus target result")
 		}
-		metrics = append(metrics, ParseMetricData(result.Data, result.Source, result.ExtraLabels)...)
+		metrics = append(metrics, ParseMetricData(result.Data, result.ExtraLabels)...)
 	}
 	pd.PromMetrics = metrics
 	pd.sortPromMetrics()

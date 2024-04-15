@@ -5,6 +5,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	log "github.com/sirupsen/logrus"
 	"net/http"
+	"os"
 	"strings"
 	"testing"
 	"time"
@@ -67,7 +68,9 @@ func TestMerge(t *testing.T) {
 		log.Fatal(err)
 	}
 	result := pd.ToString()
-	fmt.Printf("%v\n", result)
+	if os.Getenv("DEBUG") != "" {
+		fmt.Printf("%v\n", result)
+	}
 
 	expectedList := []string{
 		`go_threads{app="api",source="internet",service="backend"}`,

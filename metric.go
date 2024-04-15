@@ -19,27 +19,27 @@ type PromMetric struct {
 	sort      string
 }
 
-func ParseMetricData(in string, source string, extraLabels []string) []*PromMetric {
+func ParseMetricData(in string, extraLabels []string) []*PromMetric {
 	var metrics []*PromMetric
 	helpMap := make(map[string]string)
 	typeMap := make(map[string]string)
 
 	lines := ReadStringLineByLine(in)
 	for i, _ := range lines {
-		if lines[i][0] == '#' && len(lines[i]) > 6 && lines[i][0:6] == "# HELP" {
+		if len(lines[i]) > 6 && lines[i][0:6] == "# HELP" {
 			log.Debugf("Metadata help %v", lines[i])
 			matches := helpRe.FindStringSubmatch(lines[i])
 			if matches == nil || len(matches) < 2 {
-				log.Warnf("No matches found for the input %v", lines[i])
+				log.Warnf("No matches found for the help input %v", lines[i])
 			}
 			helpMap[matches[1]] = matches[0]
 			continue
 		}
-		if lines[i][0] == '#' && len(lines[i]) > 6 && lines[i][0:6] == "# TYPE" {
+		if len(lines[i]) > 6 && lines[i][0:6] == "# TYPE" {
 			log.Debugf("Metadata type %v", lines[i])
 			matches := typeRe.FindStringSubmatch(lines[i])
 			if matches == nil || len(matches) < 2 {
-				log.Warnf("No matches found for the input %v", lines[i])
+				log.Warnf("No matches found for the type input %v", lines[i])
 			}
 			typeMap[matches[1]] = matches[0]
 			continue
@@ -106,7 +106,6 @@ func ReadStringLineByLine(input string) []string {
 	for scanner.Scan() {
 		// Process the line, for example, by printing it.
 		lines = append(lines, scanner.Text())
-
 	}
 
 	// Check for errors during Scan. End of file is expected and not reported by Scan as an error.
