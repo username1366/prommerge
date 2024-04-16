@@ -58,8 +58,8 @@ func (pd *PromData) CollectTargets() error {
 	close(ch) // Close the channel after all goroutines report they are done
 
 	for result := range ch {
-		if result == nil {
-			return fmt.Errorf("empty prometheus target result")
+		if result.Err != nil {
+			return result.Err
 		}
 		metrics = append(metrics, ParseMetricData(result.Data, result.ExtraLabels)...)
 	}
@@ -91,8 +91,7 @@ func (pt *PromTarget) FetchData(wg *sync.WaitGroup, ch chan<- *PromChanData) {
 	defer wg.Done() // Signal that this goroutine is done after completing its task
 	response, err := httpClient.Get(pt.Url)
 	if err != nil {
-		log.Errorf("Error fetching data from %s: %v\n", pt.Url, err)
-		ch <- nil // Send an empty string in case of error
+		ch <- &PromChanData{Err: fmt.Errorf("error fetching data from %s: %v", pt.Url, err)}
 		return
 	}
 	defer func() {
@@ -104,8 +103,7 @@ func (pt *PromTarget) FetchData(wg *sync.WaitGroup, ch chan<- *PromChanData) {
 
 	body, err := io.ReadAll(response.Body)
 	if err != nil {
-		log.Errorf("Error reading data from %s: %v\n", pt.Url, err)
-		ch <- nil // Send an empty string in case of error
+		ch <- &PromChanData{Err: fmt.Errorf("error reading data from %s: %v", pt.Url, err)}
 		return
 	}
 	ch <- &PromChanData{
@@ -119,6 +117,7 @@ type PromChanData struct {
 	Data        string
 	Source      string
 	ExtraLabels []string
+	Err         error
 }
 
 func (pd *PromData) ToString() string {
