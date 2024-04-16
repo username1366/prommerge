@@ -26,16 +26,18 @@ var (
 	helpRe   = regexp.MustCompile(HelpReStr)
 )
 
-func NewPromData(promTargets []PromTarget) *PromData {
+func NewPromData(promTargets []PromTarget, emptyOnFailure bool) *PromData {
 	pd := &PromData{
-		PromTargets: promTargets,
+		PromTargets:    promTargets,
+		EmptyOnFailure: emptyOnFailure,
 	}
 	return pd
 }
 
 type PromData struct {
-	PromMetrics []*PromMetric
-	PromTargets []PromTarget
+	PromMetrics    []*PromMetric
+	PromTargets    []PromTarget
+	EmptyOnFailure bool
 }
 
 type PromTarget struct {
@@ -58,7 +60,7 @@ func (pd *PromData) CollectTargets() error {
 	close(ch) // Close the channel after all goroutines report they are done
 
 	for result := range ch {
-		if result.Err != nil {
+		if result.Err != nil && pd.EmptyOnFailure {
 			return result.Err
 		}
 		metrics = append(metrics, ParseMetricData(result.Data, result.ExtraLabels)...)
