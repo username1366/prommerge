@@ -26,10 +26,13 @@ var (
 	helpRe   = regexp.MustCompile(HelpReStr)
 )
 
-func NewPromData(promTargets []PromTarget, emptyOnFailure bool) *PromData {
+func NewPromData(promTargets []PromTarget, emptyOnFailure, async, sort, omitMeta bool) *PromData {
 	pd := &PromData{
 		PromTargets:    promTargets,
 		EmptyOnFailure: emptyOnFailure,
+		Async:          async,
+		Sort:           sort,
+		OmitMeta:       omitMeta,
 	}
 	return pd
 }
@@ -38,6 +41,9 @@ type PromData struct {
 	PromMetrics    []*PromMetric
 	PromTargets    []PromTarget
 	EmptyOnFailure bool
+	Async          bool
+	Sort           bool
+	OmitMeta       bool
 }
 
 type PromTarget struct {
@@ -53,7 +59,11 @@ func (pd *PromData) CollectTargets() error {
 
 	for i, _ := range pd.PromTargets {
 		wg.Add(1)
-		go pd.PromTargets[i].FetchData(&wg, ch) // Start a goroutine for each URL
+		if pd.Async {
+			go pd.PromTargets[i].FetchData(&wg, ch) // Start a goroutine for each URL
+		} else {
+			pd.PromTargets[i].FetchData(&wg, ch)
+		}
 	}
 
 	wg.Wait() // Wait for all fetch operations to complete
@@ -63,10 +73,12 @@ func (pd *PromData) CollectTargets() error {
 		if result.Err != nil && pd.EmptyOnFailure {
 			return result.Err
 		}
-		metrics = append(metrics, ParseMetricData(result.Data, result.ExtraLabels)...)
+		metrics = append(metrics, pd.ParseMetricData(result.Data, result.ExtraLabels)...)
 	}
 	pd.PromMetrics = metrics
-	pd.sortPromMetrics()
+	if !pd.OmitMeta {
+		pd.sortPromMetrics()
+	}
 
 	return nil
 }

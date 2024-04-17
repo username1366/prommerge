@@ -19,33 +19,40 @@ type PromMetric struct {
 	sort      string
 }
 
-func ParseMetricData(in string, extraLabels []string) []*PromMetric {
+func (pd *PromData) ParseMetricData(in string, extraLabels []string) []*PromMetric {
 	var metrics []*PromMetric
 	helpMap := make(map[string]string)
 	typeMap := make(map[string]string)
+	scanner := bufio.NewScanner(strings.NewReader(in))
 
-	lines := ReadStringLineByLine(in)
-	for i, _ := range lines {
-		if len(lines[i]) > 6 && lines[i][0:6] == "# HELP" {
-			log.Debugf("Metadata help %v", lines[i])
-			matches := helpRe.FindStringSubmatch(lines[i])
+	for scanner.Scan() {
+		line := scanner.Text()
+		if len(line) > 6 && line[0:6] == "# HELP" {
+			if pd.OmitMeta {
+				continue
+			}
+			log.Debugf("Metadata help %v", line)
+			matches := helpRe.FindStringSubmatch(line)
 			if matches == nil || len(matches) < 2 {
-				log.Warnf("No matches found for the help input %v", lines[i])
+				log.Warnf("No matches found for the help input %v", line)
 			}
 			helpMap[matches[1]] = matches[0]
 			continue
 		}
-		if len(lines[i]) > 6 && lines[i][0:6] == "# TYPE" {
-			log.Debugf("Metadata type %v", lines[i])
-			matches := typeRe.FindStringSubmatch(lines[i])
+		if len(line) > 6 && line[0:6] == "# TYPE" {
+			if pd.OmitMeta {
+				continue
+			}
+			log.Debugf("Metadata type %v", line)
+			matches := typeRe.FindStringSubmatch(line)
 			if matches == nil || len(matches) < 2 {
-				log.Warnf("No matches found for the type input %v", lines[i])
+				log.Warnf("No matches found for the type input %v", line)
 			}
 			typeMap[matches[1]] = matches[0]
 			continue
 		}
 
-		p, err := MetricParser(lines[i], extraLabels)
+		p, err := pd.MetricParser(line, extraLabels)
 		if err != nil {
 			log.Errorf("%v", err)
 		}
@@ -54,10 +61,14 @@ func ParseMetricData(in string, extraLabels []string) []*PromMetric {
 		metrics = append(metrics, p)
 		log.Debugf("Metric: %+v", p)
 	}
+
+	if err := scanner.Err(); err != nil {
+		fmt.Fprintln(os.Stderr, "reading input:", err)
+	}
 	return metrics
 }
 
-func MetricParser(input string, extraLabels []string) (*PromMetric, error) {
+func (pd *PromData) MetricParser(input string, extraLabels []string) (*PromMetric, error) {
 	p := new(PromMetric)
 	matches := metricRe.FindStringSubmatch(input)
 	if matches == nil {
@@ -92,25 +103,9 @@ func MetricParser(input string, extraLabels []string) (*PromMetric, error) {
 	}
 	log.Debugf("Value: %v", value)
 	p.Value = value
-	p.sort = fmt.Sprintf("%v%v", p.Name, p.LabelList)
+
+	if pd.Sort {
+		p.sort = fmt.Sprintf("%v%v", p.Name, p.LabelList)
+	}
 	return p, nil
-}
-
-// ReadStringLineByLine takes a multiline string and processes each line.
-func ReadStringLineByLine(input string) []string {
-	// Create a new scanner from the input string.
-	var lines []string
-	scanner := bufio.NewScanner(strings.NewReader(input))
-
-	// Iterate over all lines in the input string.
-	for scanner.Scan() {
-		// Process the line, for example, by printing it.
-		lines = append(lines, scanner.Text())
-	}
-
-	// Check for errors during Scan. End of file is expected and not reported by Scan as an error.
-	if err := scanner.Err(); err != nil {
-		fmt.Fprintln(os.Stderr, "reading input:", err)
-	}
-	return lines
 }

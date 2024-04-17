@@ -31,7 +31,7 @@ func BenchmarkFunction(b *testing.B) {
 					`app="web"`,
 				},
 			},
-		}, true)
+		}, true, false, false, false)
 		err := pd.CollectTargets()
 		if err != nil {
 			log.Fatal(err)
@@ -62,7 +62,7 @@ func TestMerge(t *testing.T) {
 				`app="web"`,
 			},
 		},
-	}, false)
+	}, false, false, false, false)
 	err := pd.CollectTargets()
 	if err != nil {
 		log.Errorf("%v", err)
