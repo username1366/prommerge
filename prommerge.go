@@ -76,7 +76,7 @@ func (pd *PromData) CollectTargets() error {
 		metrics = append(metrics, pd.ParseMetricData(result.Data, result.ExtraLabels)...)
 	}
 	pd.PromMetrics = metrics
-	if !pd.OmitMeta {
+	if !pd.OmitMeta || pd.Sort {
 		pd.sortPromMetrics()
 	}
 
