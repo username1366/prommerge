@@ -53,6 +53,45 @@ type PromTarget struct {
 
 // CollectTargets fetches metrics from multiple URLs concurrently and combines them
 func (pd *PromData) CollectTargets() error {
+	/*
+		var metrics []*PromMetric
+		var wg sync.WaitGroup
+		ch := make(chan *PromChanData, len(pd.PromTargets))
+
+		for i, _ := range pd.PromTargets {
+			wg.Add(1)
+			if pd.Async {
+				go pd.PromTargets[i].FetchData(&wg, ch) // Start a goroutine for each URL
+			} else {
+				pd.PromTargets[i].FetchData(&wg, ch)
+			}
+		}
+
+		wg.Wait() // Wait for all fetch operations to complete
+		close(ch) // Close the channel after all goroutines report they are done
+
+		for result := range ch {
+			if result.Err != nil && pd.EmptyOnFailure {
+				return result.Err
+			}
+			metrics = append(metrics, pd.ParseMetricData(result.Data, result.ExtraLabels)...)
+		}
+		pd.PromMetrics = metrics
+	*/
+
+	err := pd.AsyncHTTP()
+	if err != nil {
+		return err
+	}
+	if !pd.OmitMeta || pd.Sort {
+		pd.sortPromMetrics()
+	}
+
+	return nil
+}
+
+// CollectTargets fetches metrics from multiple URLs concurrently and combines them
+func (pd *PromData) CollectTargetsOld() error {
 	var metrics []*PromMetric
 	var wg sync.WaitGroup
 	ch := make(chan *PromChanData, len(pd.PromTargets))
