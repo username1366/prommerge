@@ -2,24 +2,26 @@ package main
 
 import (
 	"fmt"
+	"github.com/lmittmann/tint"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	log "github.com/sirupsen/logrus"
 	"github.com/username1366/prommerge"
 	"log/slog"
 	"net/http"
+	"os"
 	"time"
 )
 
 const (
 	BasePort       = 10000
-	NumPromTargets = 200
+	NumPromTargets = 500
 	Socket         = ":9393"
 )
 
 func GetPromTargets() []prommerge.PromTarget {
 	var targets []prommerge.PromTarget
 	for i := 0; i < NumPromTargets; i++ {
-		url := fmt.Sprintf("http://localhost:%v/metrics", BasePort+i)
+		url := fmt.Sprintf("http://127.1:%v/metrics", BasePort+i)
 		socket := fmt.Sprintf(":%v", BasePort+i)
 		go func() {
 			slog.Error("HTTP server error", http.ListenAndServe(socket, promhttp.Handler()).Error())
@@ -33,36 +35,38 @@ func GetPromTargets() []prommerge.PromTarget {
 }
 
 func main() {
-	log.Printf("Listen server %v", Socket)
+	w := os.Stderr
+	// create a new logger
+	logger := slog.New(tint.NewHandler(w, nil))
+
+	// set global logger with custom options
+	slog.SetDefault(slog.New(
+		tint.NewHandler(w, &tint.Options{
+			Level: slog.LevelInfo,
+			//TimeFormat: time.DateTime,
+		}),
+	))
+
+	slog.Info("Listen server", slog.String("socket", Socket))
+	getTargetsTime := time.Now()
 	targets := GetPromTargets()
+	slog.Info("Get targets generation is finished", slog.String("duration", time.Since(getTargetsTime).String()))
 	http.HandleFunc("/prommerge", func(writer http.ResponseWriter, request *http.Request) {
-		/*
-			pd := prommerge.NewPromData([]prommerge.PromTarget{
-				{
-					Url: "http://127.1:8111/metrics",
-					ExtraLabels: []string{
-						`app="api"`,
-						`source="internet"`,
-					},
-				},
-				{
-					Url: "http://127.1:8112/metrics",
-					ExtraLabels: []string{
-						`app="web"`,
-					},
-				},
-			}, true, true, false, true)
-		*/
 		t := time.Now()
-		pd := prommerge.NewPromData(targets, true, true, false, true)
+		pd := prommerge.NewPromData(targets, false, true, true, false)
 		defer func() {
-			log.Printf("Exec time %v", time.Since(t))
+			logger.Info("Request finished", slog.String("duration", time.Since(t).String()))
 		}()
+		collectTargetsTime := time.Now()
 		err := pd.CollectTargets()
 		if err != nil {
 			log.Errorf("%v", err)
 		}
-		writer.Write([]byte(pd.ToString()))
+		logger.Info("Targets are collected", slog.String("duration", time.Since(collectTargetsTime).String()))
+		outputTime := time.Now()
+		output := pd.ToString()
+		logger.Info("Output is generated", slog.String("duration", time.Since(outputTime).String()))
+		writer.Write([]byte(output))
 	})
-	http.ListenAndServe(Socket, nil)
+	logger.Error("Listen error", http.ListenAndServe(Socket, nil))
 }

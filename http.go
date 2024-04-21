@@ -40,21 +40,38 @@ func (pd *PromData) AsyncHTTP() error {
 	for {
 		slog.Info("Inter")
 		select {
-		case err := <-errC:
-			if err != nil && pd.EmptyOnFailure {
-				return fmt.Errorf("failed make async http request, %v", err)
-			}
-			if err != nil && !pd.EmptyOnFailure {
-				slog.Error("Failed make async http request", slog.String("err", err.Error()))
-			}
 		case promData := <-bodyData:
 			if promData == nil {
 				continue
 			}
+			if promData.Err != nil && pd.EmptyOnFailure {
+				pd.PromMetrics = nil
+				return fmt.Errorf("failed make async http request, %v", promData.Err)
+			}
+			if promData.Err != nil && !pd.EmptyOnFailure {
+				slog.Error("Failed make async http request", slog.String("err", promData.Err.Error()))
+				continue
+			}
 			pd.PromMetrics = append(pd.PromMetrics, pd.ParseMetricData(promData.Data, promData.ExtraLabels)...)
 		case <-done:
-			fmt.Printf("bodyData=%v, errC=%v\n", len(bodyData), len(errC))
+			slog.Info("Request processed", slog.Int("len(bodyData)", len(bodyData)))
 			return nil
+		}
+	}
+}
+
+func (pd *PromData) MetricsParserWorker(in string, labels []string) {
+	pd.ParseMetricData(in, labels)
+}
+
+func (pd *PromData) MetricsMergeWorker(promMetrics chan []*PromMetric) {
+	for {
+		select {
+		case metrics, ok := <-promMetrics:
+			if !ok {
+				return
+			}
+			pd.PromMetrics = append(pd.PromMetrics, metrics...)
 		}
 	}
 }
@@ -72,13 +89,15 @@ func AHTTP(wg *sync.WaitGroup, url string, bodyData chan *PromChanData, extraLab
 	slog.Debug("Get endpoint", slog.String("url", url))
 	response, err := httpClient.Get(url)
 	if err != nil {
-		errC <- fmt.Errorf("http get error for %s: %v", url, err)
+		//errC <- fmt.Errorf("http get error for %s: %v", url, err)
+		bodyData <- &PromChanData{Err: fmt.Errorf("http get error for %s: %v", url, err)}
 		return
 	}
 
 	body, err := io.ReadAll(response.Body)
 	if err != nil {
-		errC <- fmt.Errorf("error reading data from %s: %v", url, err)
+		//errC <- fmt.Errorf("error reading data from %s: %v", url, err)
+		bodyData <- &PromChanData{Err: fmt.Errorf("error reading data from %s: %v", url, err)}
 		return
 	}
 	bodyData <- &PromChanData{
