@@ -14,7 +14,7 @@ import (
 
 const (
 	BasePort       = 10000
-	NumPromTargets = 500
+	NumPromTargets = 3
 	Socket         = ":9393"
 )
 
@@ -26,6 +26,24 @@ func GetPromTargets() []prommerge.PromTarget {
 		go func() {
 			slog.Error("HTTP server error", http.ListenAndServe(socket, promhttp.Handler()).Error())
 		}()
+		targets = append(targets, prommerge.PromTarget{
+			Url:         url,
+			ExtraLabels: []string{fmt.Sprintf("app=%v", i)},
+		})
+	}
+	return targets
+}
+
+func GetPromTargetsSingleServer() []prommerge.PromTarget {
+	var targets []prommerge.PromTarget
+	go func() {
+		slog.Error("HTTP server error", http.ListenAndServe(fmt.Sprintf(":%v", BasePort), nil))
+	}()
+	for i := 0; i < NumPromTargets; i++ {
+		url := fmt.Sprintf("http://127.1:%v/metrics%v", BasePort, i)
+		endpoint := fmt.Sprintf("/metrics%v", i)
+		http.Handle(endpoint, promhttp.Handler())
+
 		targets = append(targets, prommerge.PromTarget{
 			Url:         url,
 			ExtraLabels: []string{fmt.Sprintf("app=%v", i)},
@@ -49,7 +67,8 @@ func main() {
 
 	slog.Info("Listen server", slog.String("socket", Socket))
 	getTargetsTime := time.Now()
-	targets := GetPromTargets()
+	//targets := GetPromTargets()
+	targets := GetPromTargetsSingleServer()
 	slog.Info("Get targets generation is finished", slog.String("duration", time.Since(getTargetsTime).String()))
 	http.HandleFunc("/prommerge", func(writer http.ResponseWriter, request *http.Request) {
 		t := time.Now()

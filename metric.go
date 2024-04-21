@@ -13,6 +13,7 @@ import (
 type PromMetric struct {
 	Name      string
 	LabelList []string
+	Output    string
 	Value     float64
 	Help      string
 	Type      string

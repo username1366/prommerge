@@ -1,6 +1,7 @@
 package prommerge
 
 import (
+	"bytes"
 	"fmt"
 	"log/slog"
 	"sort"
@@ -27,25 +28,37 @@ var (
 	helpRe   = regexp.MustCompile(HelpReStr)
 )
 
-func NewPromData(promTargets []PromTarget, emptyOnFailure, async, sort, omitMeta bool) *PromData {
-	pd := &PromData{
-		PromTargets:    promTargets,
-		EmptyOnFailure: emptyOnFailure,
-		Async:          async,
-		Sort:           sort,
-		OmitMeta:       omitMeta,
-	}
-	return pd
-}
-
-type PromData struct {
-	PromMetrics    []*PromMetric
-	PromTargets    []PromTarget
-	promMetrics    chan []*PromMetric
+type PromDataOpts struct {
 	EmptyOnFailure bool
 	Async          bool
 	Sort           bool
 	OmitMeta       bool
+}
+
+func NewPromData(promTargets []PromTarget, emptyOnFailure, async, sort, omitMeta bool) *PromData {
+	pd := &PromData{
+		PromTargets:         promTargets,
+		PromMetricsStream:   make(chan []*PromMetric, 20),
+		MergeWorkerDoneHook: make(chan struct{}),
+		EmptyOnFailure:      emptyOnFailure,
+		Async:               async,
+		Sort:                sort,
+		OmitMeta:            omitMeta,
+	}
+	go pd.MetricsMergeWorker()
+	return pd
+}
+
+type PromData struct {
+	PromMetrics          []*PromMetric
+	PromTargets          []PromTarget
+	PromMetricsStream    chan []*PromMetric
+	PromMetricsOutStream chan string
+	MergeWorkerDoneHook  chan struct{}
+	EmptyOnFailure       bool
+	Async                bool
+	Sort                 bool
+	OmitMeta             bool
 }
 
 type PromTarget struct {
@@ -63,42 +76,10 @@ func (pd *PromData) CollectTargets() error {
 		if pd.OmitMeta {
 			slog.Warn("Meta collecting is disabled, sort may not work")
 		}
-		slog.Info("Sort metrics")
+		t := time.Now()
 		pd.sortPromMetrics()
+		slog.Info("Metrics sorted", slog.String("duration", time.Since(t).String()))
 	}
-
-	return nil
-}
-
-// CollectTargets fetches metrics from multiple URLs concurrently and combines them
-func (pd *PromData) CollectTargetsOld() error {
-	var metrics []*PromMetric
-	var wg sync.WaitGroup
-	ch := make(chan *PromChanData, len(pd.PromTargets))
-
-	for i, _ := range pd.PromTargets {
-		wg.Add(1)
-		if pd.Async {
-			go pd.PromTargets[i].FetchData(&wg, ch) // Start a goroutine for each URL
-		} else {
-			pd.PromTargets[i].FetchData(&wg, ch)
-		}
-	}
-
-	wg.Wait() // Wait for all fetch operations to complete
-	close(ch) // Close the channel after all goroutines report they are done
-
-	for result := range ch {
-		if result.Err != nil && pd.EmptyOnFailure {
-			return result.Err
-		}
-		metrics = append(metrics, pd.ParseMetricData(result.Data, result.ExtraLabels)...)
-	}
-	pd.PromMetrics = metrics
-	if !pd.OmitMeta || pd.Sort {
-		pd.sortPromMetrics()
-	}
-
 	return nil
 }
 
@@ -113,9 +94,9 @@ func (pd *PromData) sortPromMetrics() {
 var httpClient = &http.Client{
 	Timeout: time.Second * 30, // Set a total timeout for the request
 	Transport: &http.Transport{
-		MaxIdleConns:    10,
-		IdleConnTimeout: 30 * time.Second,
-		//DisableCompression:  true,
+		MaxIdleConns:       100,
+		IdleConnTimeout:    30 * time.Second,
+		DisableCompression: true,
 	},
 }
 
@@ -154,30 +135,63 @@ type PromChanData struct {
 }
 
 func (pd *PromData) ToString() string {
-	var output string
+	//var output string
 	var prevMetric string
-	for _, m := range pd.PromMetrics {
-		mStr := fmt.Sprintf("%v%v %v", m.Name, func() string {
-			if len(m.LabelList) == 0 {
-				return ""
-			}
-			var labelPairs string
-			labelPairs = "{"
-			for i := 0; i < len(m.LabelList); i += 2 {
-				labelPairs = labelPairs + fmt.Sprintf("%v=\"%v\"", m.LabelList[i], m.LabelList[i+1])
-				if i != len(m.LabelList)-2 {
-					labelPairs = labelPairs + ","
-				}
-			}
-			labelPairs = labelPairs + "}"
-			return labelPairs
-		}(), m.Value)
-		if prevMetric != m.Name && (m.Help != "" || m.Type != "") {
-			output = output + fmt.Sprintf("%v\n", m.Help)
-			output = output + fmt.Sprintf("%v\n", m.Type)
-		}
-		output = output + fmt.Sprintf("%v\n", mStr)
-		prevMetric = m.Name
+	var buffer bytes.Buffer
+
+	//var channels []chan string
+	tP := time.Now()
+	wg := &sync.WaitGroup{}
+	workerPool := make(chan struct{}, 900)
+	for n, _ := range pd.PromMetrics {
+		wg.Add(1)
+		workerPool <- struct{}{}
+		go func(wg *sync.WaitGroup) {
+			defer func() {
+				<-workerPool
+				wg.Done()
+			}()
+			pd.PromMetrics[n].Output = pd.BuildMetricString(n)
+		}(wg)
 	}
-	return output
+	wg.Wait()
+	slog.Info("Output is prepared", slog.String("duration", time.Since(tP).String()))
+
+	t := time.Now()
+	for n, _ := range pd.PromMetrics {
+		// Process metadata
+		if prevMetric != pd.PromMetrics[n].Name && (pd.PromMetrics[n].Help != "" || pd.PromMetrics[n].Type != "") {
+			buffer.WriteString(pd.PromMetrics[n].Help)
+			buffer.WriteString("\n")
+			buffer.WriteString(pd.PromMetrics[n].Type)
+			buffer.WriteString("\n")
+		}
+		tB := time.Now()
+		buffer.WriteString(pd.PromMetrics[n].Output)
+		slog.Debug("Processed output string", slog.String("duration", time.Since(tB).String()))
+		prevMetric = pd.PromMetrics[n].Name
+	}
+	slog.Info("Output processed", slog.Int("lines", len(pd.PromMetrics)), slog.String("duration", time.Since(t).String()))
+
+	return buffer.String()
+}
+
+func (pd *PromData) BuildMetricString(n int) string {
+	mStr := fmt.Sprintf("%v%v %v\n", pd.PromMetrics[n].Name, func() string {
+		if len(pd.PromMetrics[n].LabelList) == 0 {
+			return ""
+		}
+		var labelPairs string
+		labelPairs = "{"
+		for i := 0; i < len(pd.PromMetrics[n].LabelList); i += 2 {
+			labelPairs = labelPairs + fmt.Sprintf("%v=\"%v\"", pd.PromMetrics[n].LabelList[i], pd.PromMetrics[n].LabelList[i+1])
+			if i != len(pd.PromMetrics[n].LabelList)-2 {
+				labelPairs = labelPairs + ","
+			}
+		}
+		labelPairs = labelPairs + "}"
+		return labelPairs
+	}(), pd.PromMetrics[n].Value)
+
+	return mStr
 }
