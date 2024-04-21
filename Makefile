@@ -9,6 +9,18 @@ GIT_COMMIT := $(shell git rev-list -1 HEAD)
 version: ## Show version
 	@echo $(VERSION) \(git commit: $(GIT_COMMIT)\)
 
+build:
+	go build -o server cmd/server/*.go
+
+build-exporter:
+	go build -o exporter cmd/exporter-server/*.go
+
+run: build
+	./server
+
+run-exporter: build-exporter
+	./exporter
+
 lint: # Run linters
 	golangci-lint run --color always ./...
 

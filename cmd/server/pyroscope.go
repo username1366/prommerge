@@ -1,8 +1,12 @@
 package main
 
-import "github.com/grafana/pyroscope-go"
+import (
+	"github.com/grafana/pyroscope-go"
+	"log/slog"
+)
 
 func Pyroscope() {
+	slog.Info("Start pyroscope profiler")
 	pyroscope.Start(pyroscope.Config{
 		ApplicationName: "prommerge",
 

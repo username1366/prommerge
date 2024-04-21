@@ -15,10 +15,11 @@ import (
 )
 
 const (
-	MetricReStr = `^([\w]+)(?:{(.+?)})? ([0-9.e+-]+)`
-	LabelReStr  = `^([\w]+)="(.+)"`
-	TypeReStr   = `^#\sTYPE\s(\w+)\s.+`
-	HelpReStr   = `^#\sHELP\s(\w+)\s.+`
+	MetricReStr           = `^([\w]+)(?:{(.+?)})? ([0-9.e+-]+)`
+	LabelReStr            = `^([\w]+)="(.+)"`
+	TypeReStr             = `^#\sTYPE\s(\w+)\s.+`
+	HelpReStr             = `^#\sHELP\s(\w+)\s.+`
+	DefaultWorkerPoolSize = 100
 )
 
 var (
@@ -44,21 +45,33 @@ func NewPromData(promTargets []PromTarget, emptyOnFailure, async, sort, omitMeta
 		Async:               async,
 		Sort:                sort,
 		OmitMeta:            omitMeta,
+		workerPoolSize: func() int {
+			if async {
+				return DefaultWorkerPoolSize
+			}
+			return 1
+		}(),
 	}
-	go pd.MetricsMergeWorker()
+	//go pd.MetricsMergeWorker()
 	return pd
 }
 
 type PromData struct {
-	PromMetrics          []*PromMetric
-	PromTargets          []PromTarget
-	PromMetricsStream    chan []*PromMetric
-	PromMetricsOutStream chan string
-	MergeWorkerDoneHook  chan struct{}
-	EmptyOnFailure       bool
-	Async                bool
-	Sort                 bool
-	OmitMeta             bool
+	PromMetrics            []*PromMetric
+	PromTargets            []PromTarget
+	PromMetricsStream      chan []*PromMetric
+	PromMetricsOutStream   chan string
+	MergeWorkerDoneHook    chan struct{}
+	CollectTargetsDuration time.Duration
+	SortDuration           time.Duration
+	OutputPrepareDuration  time.Duration
+	OutputProcessDuration  time.Duration
+	OutputGenerateDuration time.Duration
+	workerPoolSize         int
+	EmptyOnFailure         bool
+	Async                  bool
+	Sort                   bool
+	OmitMeta               bool
 }
 
 type PromTarget struct {
@@ -74,11 +87,12 @@ func (pd *PromData) CollectTargets() error {
 	}
 	if pd.Sort {
 		if pd.OmitMeta {
-			slog.Warn("Meta collecting is disabled, sort may not work")
+			slog.Debug("Meta collecting is disabled, sort may not work")
 		}
 		t := time.Now()
 		pd.sortPromMetrics()
-		slog.Info("Metrics sorted", slog.String("duration", time.Since(t).String()))
+		pd.SortDuration = time.Since(t)
+		slog.Debug("Metrics sorted", slog.String("duration", pd.SortDuration.String()))
 	}
 	return nil
 }
@@ -135,11 +149,9 @@ type PromChanData struct {
 }
 
 func (pd *PromData) ToString() string {
-	//var output string
 	var prevMetric string
 	var buffer bytes.Buffer
 
-	//var channels []chan string
 	tP := time.Now()
 	wg := &sync.WaitGroup{}
 	workerPool := make(chan struct{}, 900)
@@ -155,7 +167,8 @@ func (pd *PromData) ToString() string {
 		}(wg)
 	}
 	wg.Wait()
-	slog.Info("Output is prepared", slog.String("duration", time.Since(tP).String()))
+	pd.OutputPrepareDuration = time.Since(tP)
+	slog.Debug("Output is prepared", slog.String("duration", pd.OutputPrepareDuration.String()))
 
 	t := time.Now()
 	for n, _ := range pd.PromMetrics {
@@ -171,8 +184,16 @@ func (pd *PromData) ToString() string {
 		slog.Debug("Processed output string", slog.String("duration", time.Since(tB).String()))
 		prevMetric = pd.PromMetrics[n].Name
 	}
-	slog.Info("Output processed", slog.Int("lines", len(pd.PromMetrics)), slog.String("duration", time.Since(t).String()))
+	pd.OutputProcessDuration = time.Since(t)
+	slog.Debug("Output processed", slog.Int("lines", len(pd.PromMetrics)), slog.String("duration", pd.OutputProcessDuration.String()))
 
+	tB := time.Now()
+	defer func() {
+		pd.OutputGenerateDuration = time.Since(tB)
+	}()
+	defer func() {
+		buffer.Reset()
+	}()
 	return buffer.String()
 }
 
@@ -184,7 +205,7 @@ func (pd *PromData) BuildMetricString(n int) string {
 		var labelPairs string
 		labelPairs = "{"
 		for i := 0; i < len(pd.PromMetrics[n].LabelList); i += 2 {
-			labelPairs = labelPairs + fmt.Sprintf("%v=\"%v\"", pd.PromMetrics[n].LabelList[i], pd.PromMetrics[n].LabelList[i+1])
+			labelPairs = labelPairs + pd.PromMetrics[n].LabelList[i] + `="` + pd.PromMetrics[n].LabelList[i+1] + `"`
 			if i != len(pd.PromMetrics[n].LabelList)-2 {
 				labelPairs = labelPairs + ","
 			}

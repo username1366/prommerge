@@ -142,7 +142,7 @@ func Benchmark100Targets(b *testing.B) {
 	time.Sleep(time.Millisecond * 20)
 	for i := 0; i < b.N; i++ {
 		// call the function you want to test
-		pd := NewPromData(targets, true, false, false, true)
+		pd := NewPromData(targets, true, true, false, true)
 		err := pd.CollectTargets()
 		if err != nil {
 			log.Fatal(err)

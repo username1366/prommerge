@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"fmt"
 	log "github.com/sirupsen/logrus"
+	"log/slog"
 
 	"os"
 	"strconv"
@@ -32,7 +33,7 @@ func (pd *PromData) ParseMetricData(in string, extraLabels []string) []*PromMetr
 			if pd.OmitMeta {
 				continue
 			}
-			log.Debugf("Metadata help %v", line)
+			//log.Debugf("Metadata help %v", line)
 			matches := helpRe.FindStringSubmatch(line)
 			if matches == nil || len(matches) < 2 {
 				log.Warnf("No matches found for the help input %v", line)
@@ -44,7 +45,7 @@ func (pd *PromData) ParseMetricData(in string, extraLabels []string) []*PromMetr
 			if pd.OmitMeta {
 				continue
 			}
-			log.Debugf("Metadata type %v", line)
+			//log.Debugf("Metadata type %v", line)
 			matches := typeRe.FindStringSubmatch(line)
 			if matches == nil || len(matches) < 2 {
 				log.Warnf("No matches found for the type input %v", line)
@@ -55,12 +56,13 @@ func (pd *PromData) ParseMetricData(in string, extraLabels []string) []*PromMetr
 
 		p, err := pd.MetricParser(line, extraLabels)
 		if err != nil {
-			log.Errorf("%v", err)
+			slog.Error(err.Error())
+			return nil
 		}
 		p.Help = helpMap[p.Name]
 		p.Type = typeMap[p.Name]
 		metrics = append(metrics, p)
-		log.Debugf("Metric: %+v", p)
+		//log.Debugf("Metric: %+v", p)
 	}
 
 	if err := scanner.Err(); err != nil {
@@ -76,9 +78,9 @@ func (pd *PromData) MetricParser(input string, extraLabels []string) (*PromMetri
 		return nil, fmt.Errorf("no matches found for the input %v", input)
 	}
 
-	log.Debugf("Metric Name: %v", matches[1])
+	//log.Debugf("Metric Name: %v", matches[1])
 	p.Name = matches[1]
-	log.Debugf("Labels: %v", matches[2])
+	//log.Debugf("Labels: %v", matches[2])
 	labelPairs := strings.Split(matches[2], ",")
 	for _, labelPair := range extraLabels {
 		kv := strings.Split(labelPair, "=")
@@ -88,8 +90,8 @@ func (pd *PromData) MetricParser(input string, extraLabels []string) (*PromMetri
 	}
 
 	// Parse labels
-	for _, lPair := range labelPairs {
-		m := labelRe.FindStringSubmatch(lPair)
+	for i, _ := range labelPairs {
+		m := labelRe.FindStringSubmatch(labelPairs[i])
 		if m == nil {
 			log.Debugf("Metric %v has no labels", p.Name)
 			continue
@@ -102,7 +104,7 @@ func (pd *PromData) MetricParser(input string, extraLabels []string) (*PromMetri
 	if err != nil {
 		return nil, fmt.Errorf("error parsing float, %v", err)
 	}
-	log.Debugf("Value: %v", value)
+	//log.Debugf("Value: %v", value)
 	p.Value = value
 
 	if pd.Sort {
