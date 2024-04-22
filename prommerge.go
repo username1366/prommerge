@@ -7,8 +7,6 @@ import (
 	"sort"
 	"time"
 
-	log "github.com/sirupsen/logrus"
-	"io"
 	"net/http"
 	"regexp"
 	"sync"
@@ -35,6 +33,7 @@ type PromDataOpts struct {
 	Sort           bool
 	OmitMeta       bool
 	SupressErrors  bool
+	HTTPClient     *http.Client
 }
 
 func NewPromData(promTargets []PromTarget, opts PromDataOpts) *PromData {
@@ -53,6 +52,7 @@ func NewPromData(promTargets []PromTarget, opts PromDataOpts) *PromData {
 			}
 			return 1
 		}(),
+		httpClient: opts.HTTPClient,
 	}
 	return pd
 }
@@ -69,6 +69,7 @@ type PromData struct {
 	OutputProcessDuration  time.Duration
 	OutputGenerateDuration time.Duration
 	workerPoolSize         int
+	httpClient             *http.Client
 	EmptyOnFailure         bool
 	Async                  bool
 	Sort                   bool
@@ -108,6 +109,7 @@ func (pd *PromData) sortPromMetrics() {
 }
 
 // httpClient is a shared http.Client with a custom Transport
+/*
 var httpClient = &http.Client{
 	Timeout: time.Second * 30, // Set a total timeout for the request
 	Transport: &http.Transport{
@@ -116,33 +118,7 @@ var httpClient = &http.Client{
 		DisableCompression: true,
 	},
 }
-
-// FetchData makes an HTTP GET request to the specified URL and sends the response body to a channel
-func (pt *PromTarget) FetchData(wg *sync.WaitGroup, ch chan<- *PromChanData) {
-	defer wg.Done() // Signal that this goroutine is done after completing its task
-	response, err := httpClient.Get(pt.Url)
-	if err != nil {
-		ch <- &PromChanData{Err: fmt.Errorf("error fetching data from %s: %v", pt.Url, err)}
-		return
-	}
-	defer func() {
-		err = response.Body.Close()
-		if err != nil {
-			log.Errorf("Failed to close response body %v", err)
-		}
-	}()
-
-	body, err := io.ReadAll(response.Body)
-	if err != nil {
-		ch <- &PromChanData{Err: fmt.Errorf("error reading data from %s: %v", pt.Url, err)}
-		return
-	}
-	ch <- &PromChanData{
-		Data:        string(body),
-		Source:      pt.Url,
-		ExtraLabels: pt.ExtraLabels,
-	}
-}
+*/
 
 type PromChanData struct {
 	Data        string

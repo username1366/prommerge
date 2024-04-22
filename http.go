@@ -22,9 +22,9 @@ func (pd *PromData) AsyncHTTP() error {
 
 	pd.PromMetrics = nil
 
-	for _, target := range pd.PromTargets {
+	for i, _ := range pd.PromTargets {
 		httpWg.Add(1)
-		go pd.AHTTP(httpWg, target.Url, bodyData, target.ExtraLabels, workerPool)
+		go pd.AHTTP(httpWg, bodyData, workerPool, pd.PromTargets[i])
 	}
 
 	go func() {
@@ -103,7 +103,7 @@ func (pd *PromData) MetricsMergeWorker() {
 	}
 }
 
-func (pd *PromData) AHTTP(wg *sync.WaitGroup, url string, bodyData chan *PromChanData, extraLabels []string, workerPool chan struct{}) {
+func (pd *PromData) AHTTP(wg *sync.WaitGroup, bodyData chan *PromChanData, workerPool chan struct{}, target PromTarget) {
 	defer wg.Done()
 	defer func() {
 		slog.Debug("Release worker")
@@ -114,14 +114,14 @@ func (pd *PromData) AHTTP(wg *sync.WaitGroup, url string, bodyData chan *PromCha
 	slog.Debug("Acquire worker")
 	workerPool <- struct{}{}
 
-	slog.Debug("Get endpoint", slog.String("url", url))
-	response, err := httpClient.Get(url)
+	slog.Debug("Get endpoint", slog.String("url", target.Url))
+	response, err := pd.httpClient.Get(target.Url)
 	if err != nil {
-		bodyData <- &PromChanData{Err: fmt.Errorf("http get error for %s: %v", url, err)}
+		bodyData <- &PromChanData{Err: fmt.Errorf("http get error for %s: %v", target.Url, err)}
 		return
 	}
 	if response.StatusCode > 299 {
-		bodyData <- &PromChanData{Err: fmt.Errorf("response code expected 200, actual %v", response.StatusCode)}
+		bodyData <- &PromChanData{Err: fmt.Errorf("http get failed for %s, response code expected 200, actual %v", target.Url, response.StatusCode)}
 		return
 	}
 	defer func() {
@@ -132,12 +132,12 @@ func (pd *PromData) AHTTP(wg *sync.WaitGroup, url string, bodyData chan *PromCha
 	}()
 	body, err := io.ReadAll(response.Body)
 	if err != nil {
-		bodyData <- &PromChanData{Err: fmt.Errorf("error reading data from %s: %v", url, err)}
+		bodyData <- &PromChanData{Err: fmt.Errorf("error reading data from %s: %v", target.Url, err)}
 		return
 	}
 	bodyData <- &PromChanData{
 		Data:        string(body),
-		ExtraLabels: extraLabels,
+		ExtraLabels: target.ExtraLabels,
 	}
 
 	slog.Debug("Async http executed", slog.String("duration", time.Since(t).String()))

@@ -9,7 +9,7 @@ import (
 
 const (
 	BasePort       = 10000
-	NumPromTargets = 100
+	NumPromTargets = 1000
 )
 
 func main() {

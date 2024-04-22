@@ -68,6 +68,15 @@ func main() {
 	getTargetsTime := time.Now()
 	//targets := GetPromTargets()
 	targets := GetPromTargetsSingleServer()
+	httpClient := &http.Client{
+		Timeout: time.Second * 30, // Set a total timeout for the request
+		Transport: &http.Transport{
+			MaxIdleConns:        500,
+			IdleConnTimeout:     30 * time.Second,
+			DisableCompression:  true,
+			MaxIdleConnsPerHost: 200,q
+		},
+	}
 	slog.Info("Get targets generation is finished", slog.String("duration", time.Since(getTargetsTime).String()))
 	http.HandleFunc("/prommerge", func(writer http.ResponseWriter, request *http.Request) {
 		t := time.Now()
@@ -77,6 +86,7 @@ func main() {
 			Sort:           true,
 			OmitMeta:       true,
 			SupressErrors:  false,
+			HTTPClient:     httpClient,
 		})
 
 		err := pd.CollectTargets()
