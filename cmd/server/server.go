@@ -74,7 +74,7 @@ func main() {
 			MaxIdleConns:        500,
 			IdleConnTimeout:     30 * time.Second,
 			DisableCompression:  true,
-			MaxIdleConnsPerHost: 200,q
+			MaxIdleConnsPerHost: 200,
 		},
 	}
 	slog.Info("Get targets generation is finished", slog.String("duration", time.Since(getTargetsTime).String()))
