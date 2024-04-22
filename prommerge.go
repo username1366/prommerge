@@ -75,6 +75,7 @@ type PromData struct {
 }
 
 type PromTarget struct {
+	Name        string
 	Url         string
 	ExtraLabels []string
 }
