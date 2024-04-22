@@ -31,7 +31,13 @@ func BenchmarkSortEnabled(b *testing.B) {
 					`app="web"`,
 				},
 			},
-		}, true, false, true, false)
+		}, PromDataOpts{
+			EmptyOnFailure: true,
+			Async:          false,
+			Sort:           true,
+			OmitMeta:       true,
+			SupressErrors:  false,
+		})
 		err := pd.CollectTargets()
 		if err != nil {
 			log.Fatal(err)
@@ -60,7 +66,14 @@ func BenchmarkSortDisabled(b *testing.B) {
 					`app="web"`,
 				},
 			},
-		}, true, false, false, true)
+		}, PromDataOpts{
+			EmptyOnFailure: true,
+			Async:          false,
+			Sort:           false,
+			OmitMeta:       true,
+			SupressErrors:  false,
+		})
+
 		err := pd.CollectTargets()
 		if err != nil {
 			log.Fatal(err)
@@ -89,7 +102,14 @@ func BenchmarkMetaEnabled(b *testing.B) {
 					`app="web"`,
 				},
 			},
-		}, true, false, false, false)
+		}, PromDataOpts{
+			EmptyOnFailure: true,
+			Async:          false,
+			Sort:           false,
+			OmitMeta:       false,
+			SupressErrors:  false,
+		})
+
 		err := pd.CollectTargets()
 		if err != nil {
 			log.Fatal(err)
@@ -118,7 +138,14 @@ func BenchmarkMetaDisabled(b *testing.B) {
 					`app="web"`,
 				},
 			},
-		}, true, false, false, true)
+		}, PromDataOpts{
+			EmptyOnFailure: true,
+			Async:          false,
+			Sort:           false,
+			OmitMeta:       true,
+			SupressErrors:  false,
+		})
+
 		err := pd.CollectTargets()
 		if err != nil {
 			log.Fatal(err)
@@ -142,7 +169,14 @@ func Benchmark100Targets(b *testing.B) {
 	time.Sleep(time.Millisecond * 20)
 	for i := 0; i < b.N; i++ {
 		// call the function you want to test
-		pd := NewPromData(targets, true, true, false, true)
+		pd := NewPromData(targets, PromDataOpts{
+			EmptyOnFailure: true,
+			Async:          true,
+			Sort:           false,
+			OmitMeta:       true,
+			SupressErrors:  false,
+		})
+
 		err := pd.CollectTargets()
 		if err != nil {
 			log.Fatal(err)
@@ -171,7 +205,14 @@ func BenchmarkFunction(b *testing.B) {
 					`app="web"`,
 				},
 			},
-		}, true, false, false, false)
+		}, PromDataOpts{
+			EmptyOnFailure: true,
+			Async:          false,
+			Sort:           false,
+			OmitMeta:       false,
+			SupressErrors:  false,
+		})
+
 		err := pd.CollectTargets()
 		if err != nil {
 			log.Fatal(err)
@@ -202,7 +243,14 @@ func TestMerge(t *testing.T) {
 				`app="web"`,
 			},
 		},
-	}, false, false, false, false)
+	}, PromDataOpts{
+		EmptyOnFailure: false,
+		Async:          false,
+		Sort:           false,
+		OmitMeta:       false,
+		SupressErrors:  false,
+	})
+
 	err := pd.CollectTargets()
 	if err != nil {
 		log.Errorf("%v", err)

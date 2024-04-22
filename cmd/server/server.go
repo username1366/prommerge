@@ -24,7 +24,7 @@ func GetPromTargets() []prommerge.PromTarget {
 		url := fmt.Sprintf("http://127.1:%v/metrics", BasePort+i)
 		socket := fmt.Sprintf(":%v", BasePort+i)
 		go func() {
-			slog.Error("HTTP server error", http.ListenAndServe(socket, promhttp.Handler()).Error())
+			slog.Error("HTTP server error", slog.String("err", http.ListenAndServe(socket, promhttp.Handler()).Error()))
 		}()
 		targets = append(targets, prommerge.PromTarget{
 			Url:         url,
@@ -71,7 +71,14 @@ func main() {
 	slog.Info("Get targets generation is finished", slog.String("duration", time.Since(getTargetsTime).String()))
 	http.HandleFunc("/prommerge", func(writer http.ResponseWriter, request *http.Request) {
 		t := time.Now()
-		pd := prommerge.NewPromData(targets, false, true, true, true)
+		pd := prommerge.NewPromData(targets, prommerge.PromDataOpts{
+			EmptyOnFailure: false,
+			Async:          true,
+			Sort:           true,
+			OmitMeta:       true,
+			SupressErrors:  false,
+		})
+
 		err := pd.CollectTargets()
 		if err != nil {
 			slog.Error("Failed to collect prometheus targets", slog.String("err", err.Error()))
@@ -83,7 +90,8 @@ func main() {
 			slog.Duration("out_prepare", pd.OutputPrepareDuration),
 			slog.Duration("out_process", pd.OutputProcessDuration),
 			slog.Duration("out_generate", pd.OutputGenerateDuration),
-			slog.Duration("total", time.Since(t)),
+			slog.Duration("total_duration", time.Since(t)),
+			slog.Int("total_metrics", len(pd.PromMetrics)),
 		)
 		writer.Write([]byte(output))
 	})

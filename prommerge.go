@@ -34,25 +34,26 @@ type PromDataOpts struct {
 	Async          bool
 	Sort           bool
 	OmitMeta       bool
+	SupressErrors  bool
 }
 
-func NewPromData(promTargets []PromTarget, emptyOnFailure, async, sort, omitMeta bool) *PromData {
+func NewPromData(promTargets []PromTarget, opts PromDataOpts) *PromData {
 	pd := &PromData{
 		PromTargets:         promTargets,
 		PromMetricsStream:   make(chan []*PromMetric, 20),
 		MergeWorkerDoneHook: make(chan struct{}),
-		EmptyOnFailure:      emptyOnFailure,
-		Async:               async,
-		Sort:                sort,
-		OmitMeta:            omitMeta,
+		EmptyOnFailure:      opts.EmptyOnFailure,
+		Async:               opts.Async,
+		Sort:                opts.Sort,
+		OmitMeta:            opts.OmitMeta,
+		SupressErrors:       opts.SupressErrors,
 		workerPoolSize: func() int {
-			if async {
+			if opts.Async {
 				return DefaultWorkerPoolSize
 			}
 			return 1
 		}(),
 	}
-	//go pd.MetricsMergeWorker()
 	return pd
 }
 
@@ -72,6 +73,7 @@ type PromData struct {
 	Async                  bool
 	Sort                   bool
 	OmitMeta               bool
+	SupressErrors          bool
 }
 
 type PromTarget struct {

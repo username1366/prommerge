@@ -54,17 +54,21 @@ func (pd *PromData) AsyncHTTP() error {
 				return nil
 			}
 			if promData == nil {
-				slog.Info("Empty promData")
+				if !pd.SupressErrors {
+					slog.Warn("Empty promData")
+				}
 				continue
 			}
 			if promData.Err != nil && pd.EmptyOnFailure {
-				slog.Info("Return empty result")
+				slog.Debug("Return empty result")
 				pd.PromMetrics = nil
 				return fmt.Errorf("failed make async http request, %v", promData.Err)
 			}
 			if promData.Err != nil && !pd.EmptyOnFailure {
-				slog.Info("Skip promData error")
-				slog.Error("Failed make async http request", slog.String("err", promData.Err.Error()))
+				if !pd.SupressErrors {
+					slog.Warn("Skip promData error")
+					slog.Error("Failed make async http request", slog.String("err", promData.Err.Error()))
+				}
 				continue
 			}
 

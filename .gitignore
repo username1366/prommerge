@@ -1,4 +1,4 @@
 .idea
 ./exporter
-./server
-./heap.+
+server
+heap.+
